@@ -34,12 +34,14 @@ import java.util.Map;
 import org.apache.commons.lang3.CharEncoding;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.opendatakit.aggregate.odktables.rest.KeyValueStoreConstants;
-import org.opendatakit.common.android.database.DatabaseFactory;
 import org.opendatakit.common.android.database.DatabaseConstants;
+import org.opendatakit.common.android.database.DatabaseFactory;
 import org.opendatakit.common.android.provider.InstanceColumns;
 import org.opendatakit.common.android.provider.KeyValueStoreColumns;
+import org.opendatakit.common.android.utilities.ClientConnectionManagerFactory;
 import org.opendatakit.common.android.utilities.ODKDataUtils;
 import org.opendatakit.common.android.utilities.ODKDatabaseUtils;
+import org.opendatakit.common.android.utilities.WebLogger;
 import org.opendatakit.common.android.utilities.WebUtils;
 import org.opendatakit.httpclientandroidlib.Header;
 import org.opendatakit.httpclientandroidlib.HttpResponse;
@@ -69,7 +71,6 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.util.Log;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -135,21 +136,21 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
       URL url = new URL(URLDecoder.decode(urlString, CharEncoding.UTF_8));
       u = url.toURI();
     } catch (MalformedURLException e) {
-      e.printStackTrace();
+      WebLogger.getLogger(appName).printStackTrace(e);
       mOutcome.mResults.put(id,
           fail + "invalid url: " + urlString + " :: details: " + e.getMessage());
       cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
       appContext.getContentResolver().update(toUpdate, cv, null, null);
       return true;
     } catch (URISyntaxException e) {
-      e.printStackTrace();
+      WebLogger.getLogger(appName).printStackTrace(e);
       mOutcome.mResults.put(id,
           fail + "invalid uri: " + urlString + " :: details: " + e.getMessage());
       cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
       appContext.getContentResolver().update(toUpdate, cv, null, null);
       return true;
     } catch (UnsupportedEncodingException e) {
-      e.printStackTrace();
+      WebLogger.getLogger(appName).printStackTrace(e);
       mOutcome.mResults.put(id,
           fail + "invalid url: " + urlString + " :: details: " + e.getMessage());
       cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
@@ -168,7 +169,7 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
       u = uriRemap.get(u);
     } else {
       // we need to issue a head request
-      HttpHead httpHead = WebUtils.createOpenRosaHttpHead(u);
+      HttpHead httpHead = WebUtils.get().createOpenRosaHttpHead(u);
 
       // prepare response
       HttpResponse response = null;
@@ -176,14 +177,14 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
         response = httpclient.execute(httpHead, localContext);
         int statusCode = response.getStatusLine().getStatusCode();
         if (statusCode == 401) {
-          WebUtils.discardEntityBytes(response);
+          WebUtils.get().discardEntityBytes(response);
           // we need authentication, so stop and return what we've
           // done so far.
           mOutcome.mAuthRequestingServer = u;
           return false;
         } else if (statusCode == 204) {
           Header[] locations = response.getHeaders("Location");
-          WebUtils.discardEntityBytes(response);
+          WebUtils.get().discardEntityBytes(response);
           if (locations != null && locations.length == 1) {
             try {
               URL url = new URL(URLDecoder.decode(locations[0].getValue(), CharEncoding.UTF_8));
@@ -204,7 +205,7 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
                 return true;
               }
             } catch (Exception e) {
-              e.printStackTrace();
+              WebLogger.getLogger(appName).printStackTrace(e);
               mOutcome.mResults.put(id, fail + urlString + " " + e.getMessage());
               cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
               appContext.getContentResolver().update(toUpdate, cv, null, null);
@@ -213,9 +214,9 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
           }
         } else {
           // may be a server that does not handle
-          WebUtils.discardEntityBytes(response);
+          WebUtils.get().discardEntityBytes(response);
 
-          Log.w(t, "Status code on Head request: " + statusCode);
+          WebLogger.getLogger(appName).w(t, "Status code on Head request: " + statusCode);
           if (statusCode >= 200 && statusCode <= 299) {
             mOutcome.mResults
                 .put(
@@ -228,50 +229,50 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
           }
         }
       } catch (ClientProtocolException e) {
-        e.printStackTrace();
-        Log.e(t, e.getMessage());
-        WebUtils.clearHttpConnectionManager();
+        WebLogger.getLogger(appName).printStackTrace(e);
+        WebLogger.getLogger(appName).e(t, e.getMessage());
+        ClientConnectionManagerFactory.get(appName).clearHttpConnectionManager();
         mOutcome.mResults.put(id, fail + "Client Protocol Exception");
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
         return true;
       } catch (ConnectTimeoutException e) {
-        e.printStackTrace();
-        Log.e(t, e.getMessage());
-        WebUtils.clearHttpConnectionManager();
+        WebLogger.getLogger(appName).printStackTrace(e);
+        WebLogger.getLogger(appName).e(t, e.getMessage());
+        ClientConnectionManagerFactory.get(appName).clearHttpConnectionManager();
         mOutcome.mResults.put(id, fail + "Connection Timeout");
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
         return true;
       } catch (UnknownHostException e) {
-        e.printStackTrace();
-        WebUtils.clearHttpConnectionManager();
+        WebLogger.getLogger(appName).printStackTrace(e);
+        ClientConnectionManagerFactory.get(appName).clearHttpConnectionManager();
         mOutcome.mResults.put(id, fail + e.getMessage() + " :: Network Connection Failed");
-        Log.e(t, e.getMessage());
+        WebLogger.getLogger(appName).e(t, e.getMessage());
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
         return true;
       } catch (SocketTimeoutException e) {
-        e.printStackTrace();
-        Log.e(t, e.getMessage());
-        WebUtils.clearHttpConnectionManager();
+        WebLogger.getLogger(appName).printStackTrace(e);
+        WebLogger.getLogger(appName).e(t, e.getMessage());
+        ClientConnectionManagerFactory.get(appName).clearHttpConnectionManager();
         mOutcome.mResults.put(id, fail + "Connection Timeout");
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
         return true;
       } catch (HttpHostConnectException e) {
-        e.printStackTrace();
-        Log.e(t, e.toString());
-        WebUtils.clearHttpConnectionManager();
+        WebLogger.getLogger(appName).printStackTrace(e);
+        WebLogger.getLogger(appName).e(t, e.toString());
+        ClientConnectionManagerFactory.get(appName).clearHttpConnectionManager();
         mOutcome.mResults.put(id, fail + "Network Connection Refused");
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
         return true;
       } catch (Exception e) {
-        e.printStackTrace();
-        WebUtils.clearHttpConnectionManager();
+        WebLogger.getLogger(appName).printStackTrace(e);
+        ClientConnectionManagerFactory.get(appName).clearHttpConnectionManager();
         mOutcome.mResults.put(id, fail + "Generic Exception");
-        Log.e(t, e.getMessage());
+        WebLogger.getLogger(appName).e(t, e.getMessage());
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
         return true;
@@ -305,7 +306,7 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
       lastJ = j;
       first = false;
 
-      HttpPost httppost = WebUtils.createOpenRosaHttpPost(u, mAuth);
+      HttpPost httppost = WebUtils.get().createOpenRosaHttpPost(u, mAuth);
 
       long byteCount = 0L;
 
@@ -315,7 +316,7 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
       // add the submission file first...
       FileBody fb = new FileBody(instanceFile, "text/xml");
       entity.addPart("xml_submission_file", fb);
-      Log.i(t, "added xml_submission_file: " + instanceFile.getName());
+      WebLogger.getLogger(appName).i(t, "added xml_submission_file: " + instanceFile.getName());
       byteCount += instanceFile.length();
 
       for (; j < files.size(); j++) {
@@ -326,19 +327,19 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
         fb = new FileBody(f, contentType);
         entity.addPart(f.getName(), fb);
         byteCount += f.length();
-        Log.i(t, "added " + contentType + " file " + f.getName());
+        WebLogger.getLogger(appName).i(t, "added " + contentType + " file " + f.getName());
 
         // we've added at least one attachment to the request...
         if (j + 1 < files.size()) {
           long nextFileLength = (files.get(j + 1).file.length());
           if ((j - lastJ + 1 > 100) || (byteCount + nextFileLength > 10000000L)) {
             // the next file would exceed the 10MB threshold...
-            Log.i(t, "Extremely long post is being split into multiple posts");
+            WebLogger.getLogger(appName).i(t, "Extremely long post is being split into multiple posts");
             try {
               StringBody sb = new StringBody("yes", Charset.forName(CharEncoding.UTF_8));
               entity.addPart("*isIncomplete*", sb);
             } catch (Exception e) {
-              e.printStackTrace(); // never happens...
+              WebLogger.getLogger(appName).printStackTrace(e); // never happens...
             }
             ++j; // advance over the last attachment added...
             break;
@@ -353,9 +354,9 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
       try {
         response = httpclient.execute(httppost, localContext);
         int responseCode = response.getStatusLine().getStatusCode();
-        WebUtils.discardEntityBytes(response);
+        WebUtils.get().discardEntityBytes(response);
 
-        Log.i(t, "Response code:" + responseCode);
+        WebLogger.getLogger(appName).i(t, "Response code:" + responseCode);
         // verify that the response was a 201 or 202.
         // If it wasn't, the submission has failed.
         if (responseCode != 201 && responseCode != 202) {
@@ -370,7 +371,7 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
           return true;
         }
       } catch (Exception e) {
-        e.printStackTrace();
+        WebLogger.getLogger(appName).printStackTrace(e);
         mOutcome.mResults.put(id, fail + "Generic Exception. " + e.getMessage());
         cv.put(InstanceColumns.XML_PUBLISH_STATUS, InstanceColumns.STATUS_SUBMISSION_FAILED);
         appContext.getContentResolver().update(toUpdate, cv, null, null);
@@ -465,8 +466,8 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
     // ODKFileUtils.getuploadingForm.formDefFile);
     // get shared HttpContext so that authentication and cookies are
     // retained.
-    HttpContext localContext = WebUtils.getHttpContext();
-    HttpClient httpclient = WebUtils.createHttpClient(WebUtils.CONNECTION_TIMEOUT);
+    HttpContext localContext = ClientConnectionManagerFactory.get(appName).getHttpContext();
+    HttpClient httpclient = ClientConnectionManagerFactory.get(appName).createHttpClient(WebUtils.CONNECTION_TIMEOUT);
 
     Map<URI, URI> uriRemap = new HashMap<URI, URI>();
 
@@ -516,15 +517,15 @@ public class InstanceUploaderTask extends AsyncTask<String, Integer, InstanceUpl
               return mOutcome; // get credentials...
             }
           } catch (JsonParseException e) {
-            e.printStackTrace();
+            WebLogger.getLogger(appName).printStackTrace(e);
             mOutcome.mResults.put(id, fail + "unable to obtain manifest: " + dataTableInstanceId
                 + " :: details: " + e.toString());
           } catch (JsonMappingException e) {
-            e.printStackTrace();
+            WebLogger.getLogger(appName).printStackTrace(e);
             mOutcome.mResults.put(id, fail + "unable to obtain manifest: " + dataTableInstanceId
                 + " :: details: " + e.toString());
           } catch (IOException e) {
-            e.printStackTrace();
+            WebLogger.getLogger(appName).printStackTrace(e);
             mOutcome.mResults.put(id, fail + "unable to obtain manifest: " + dataTableInstanceId
                 + " :: details: " + e.toString());
           }
