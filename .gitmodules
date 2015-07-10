@@ -1,0 +1,6 @@
+[submodule "androidlibrary"]
+	path = androidlibrary
+	url = https://github.com/opendatakit/androidlibrary.git
+[submodule "androidcommon"]
+	path = androidcommon
+	url = https://github.com/opendatakit/androidcommon.git
